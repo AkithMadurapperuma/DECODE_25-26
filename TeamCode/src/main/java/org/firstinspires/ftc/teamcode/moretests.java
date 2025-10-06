@@ -11,11 +11,14 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
+
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import com.qualcomm.robotcore.hardware.LED;
+
 
 
 import java.io.IOException;
@@ -50,6 +53,14 @@ public class moretests extends LinearOpMode {
     double motor3power;
     private LED led;
     private CRServo servo;
+
+    double Kp = 0.02;
+    double Ki = 0.001;
+    double Kd = 0.002;
+
+    double integralSum = 0;
+    double lastError = 0;
+    double P, I, D;
 
 
 
@@ -103,12 +114,28 @@ public class moretests extends LinearOpMode {
 
             while (opModeIsActive()) {
 
-                if (fiducialID != -1) {
+                limelight.start();
+
+
+
+
+                    if (fiducialID != -1) {
                     telemetry.addData("Fiducial ID (tid)", fiducialID);
                 } else {
                     telemetry.addData("Fiducial ID (tid)", "No tag detected");
                 }
                 telemetry.update();
+
+                LLResult result = limelight.getLatestResult();
+                Pose3D botpose = result.getBotpose();
+
+
+
+
+                telemetry.addData("tx", result.getTx());
+                telemetry.addData("ty", result.getTy());
+                telemetry.addData("Botpose", botpose.toString());
+
 
                 if(fiducialID == 21){
                     gpp = true;
@@ -119,6 +146,7 @@ public class moretests extends LinearOpMode {
                 else if(fiducialID == 23){
                     ppg = true;
                 }
+
 
                 double red = colorSensor.red();
                 double blue = colorSensor.blue();
@@ -163,11 +191,15 @@ public class moretests extends LinearOpMode {
 
                 if (h < 360 && h > 310) {
                     purpleball = true;
+                    led.enable(true);
                 }
 
                 if (h < 140 && h > 105) {
                     greenball = true;
+                    led.enable(true);
                 }
+
+
 
                 telemetry.addData("Greenball", greenball);
                 telemetry.addData("Purpleball", purpleball);
@@ -177,10 +209,47 @@ public class moretests extends LinearOpMode {
                 double r1 = gamepad1.right_stick_x;
                 double denominator = Math.max(Math.abs(x) + Math.abs(y) + Math.abs(r1), 1);
 
-                motor0power  = (y + x + r1) / denominator;
-                motor1power = (y - x - r1) / denominator;
-                motor2power   = (y - x + r1) / denominator;
-                motor3power  = (y + x - r1) / denominator;
+
+                if(gamepad1.x) {
+                    if (fiducialID == 24 || fiducialID == 22 ) {
+                        double tx = result.getTx();
+                        double error = -tx;
+
+                        P = Kp * error;
+
+                        integralSum += error;
+                        I = Ki * integralSum;
+
+                        D = Kd * (error - lastError);
+
+                        double correction = P + I + D;
+                        lastError = error;
+
+
+                        double turnPower = correction;
+
+
+
+                        // Example for a tank drive
+                        motor0.setPower(-turnPower);
+                        motor2.setPower(-turnPower);
+                        motor1.setPower(turnPower);
+                        motor3.setPower(turnPower);
+
+                        // Add telemetry for debugging
+                        telemetry.addData("Error", error);
+                        telemetry.addData("Correction", correction);
+                        telemetry.update();
+                    } else {
+
+                    }
+
+                }else{
+                    motor0power = (y + x + r1) / denominator;
+                    motor1power = (y - x - r1) / denominator;
+                    motor2power = (y - x + r1) / denominator;
+                    motor3power = (y + x - r1) / denominator;
+                }
 
 
                 motor0.setPower(motor0power);
@@ -188,14 +257,6 @@ public class moretests extends LinearOpMode {
                 motor2.setPower(motor2power);
                 motor3.setPower(motor3power);
 
-                if(gamepad1.a){
-                    servo.setPower(1);
-                }
-                if(gamepad1.b){
-                    servo.setPower(0);
-                }
-
-                sleep(50);
             }
 
             limelightThread.interrupt();
